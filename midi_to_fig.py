@@ -78,8 +78,9 @@ def print_array(midi_array):
 
 
 def main():
-    filename = ""
-    midi_file = mido.MidiFile(filename, clip=True)
+    # Need to change filepath to midi path
+    filepath = ""
+    midi_file = mido.MidiFile(filepath, clip=True)
     midi_array = mid2arry(midi_file)
     print_array(midi_array)
 
