@@ -27,7 +27,12 @@ def Attention_Matrix(K, Q, S_rel, use_mask=False):
 
 
 class Atten_Head(tf.keras.layers.Layer):
-	def __init__(self, head_length, window_sz, use_mask):		
+	"""
+	Had to add parameters here [Replaced 'head_length' with params for 'input_size' and 'output_size']
+	'head_length' is 'input_size' and is variable depending on whether the 'emb_sz' evenly divides into 'num_heads'
+	This may be the wrong way to go about it, but this retains the most similarity to the hw4 code.
+	"""
+	def __init__(self, input_size, output_size, window_sz, use_mask):
 		super(Atten_Head, self).__init__()
 
                 '''        
@@ -38,12 +43,12 @@ class Atten_Head(tf.keras.layers.Layer):
                 
 		self.use_mask = use_mask
 		
-		self.K = self.add_weight("K", (head_length, head_length))
-		self.V = self.add_weight("V", (head_length, head_length))
-		self.Q = self.add_weight("Q", (head_length, head_length))
+		self.K = self.add_weight("K", (input_size, output_size))
+		self.V = self.add_weight("V", (input_size, output_size))
+		self.Q = self.add_weight("Q", (input_size, output_size))
 		
 		# We need to initialize E matrix here for relative attention
-		self.E = self.add_weight("E", (window_sz, head_length))
+		self.E = self.add_weight("E", (window_sz, output_size))
 		
 	@tf.function
 	def call(self, inputs_for_keys, inputs_for_values, inputs_for_queries):
@@ -90,16 +95,32 @@ def skew(rel_emb):
 
 
 class Multi_Headed(tf.keras.layers.Layer):
-	def __init__(self, emb_sz, use_mask):
+	def __init__(self, emb_sz, use_mask, num_heads):
 		super(Multi_Headed, self).__init__()
 
-		self.h = 7 # Must be a factor of emb_sz
-		self.size = emb_size
+		self.h = num_heads # Does not have to be an exact factor of emb_sz
+		self.size = emb_sz
 		self.use_mask = use_mask
 
-		self.linear = tf.keras.layers.Dense(self.size)
-		# Vectorize the head creation process
-                # head_n = Atten_Head(self.size / self.h, self.size, self.use_mask)
+		# Initialize heads
+		self.attention_heads = []
+
+		# Split emb_sz into 'num_heads' groups, where the last head holds the elements that don't evenly divide
+		output_size = emb_sz // (num_heads - 1)
+		extra = emb_sz % (num_heads - 1)
+		# create heads
+		for i in range(num_heads):
+			# if we're at the last head...
+			if i == num_heads - 1:
+				# and there is uneven division
+				if extra is not 0:
+					# create a head with the extra elements
+					head = Atten_Head(emb_sz, extra, use_mask)
+			# otherwise create a evenly divided head
+			else:
+				head = Atten_Head(emb_sz, output_size, use_mask)
+			# add head to the head list
+			self.attention_heads.append(head)
                 	
 
 	@tf.function
@@ -119,18 +140,18 @@ class Multi_Headed(tf.keras.layers.Layer):
 		:return: tensor of [BATCH_SIZE x window_sz x output_size ]
 		"""
 
-		# Split data
+		attentions = []
+		# call each of the attention heads with the inputs
+		for i in range(len(self.attention_heads)):
+			head = self.attention_heads[i]
+			# compute individual attentions
+			attention = head.call(inputs_for_keys, inputs_for_values, inputs_for_queries)
+			# append to attention list
+			attentions.append(attention)
 
-                # Run attention heads
-                # Z_n = head_n(inputs_for_keys, inputs_for_values, inputs_for_queries)
-
-                # Concatenate outputs
-
-                # Apply linear layers
-                # output = linear(concat)
-
-                #return output
-		return None
+		# concatentate along axis 2, to recombine into the full attention tensor
+		attentions = tf.concat(attentions, axis=2)
+		return attentions
 
 
 class Feed_Forwards(tf.keras.layers.Layer):
@@ -157,14 +178,14 @@ class Feed_Forwards(tf.keras.layers.Layer):
 		return layer_2_out
 
 class Transformer_Block(tf.keras.layers.Layer):
-	def __init__(self, emb_sz, is_decoder):
+	def __init__(self, emb_sz, is_decoder, num_heads=1):
 		super(Transformer_Block, self).__init__()
 
 		self.ff_layer = Feed_Forwards(emb_sz)
-		self.self_atten = Multi_Headed(emb_sz,use_mask=is_decoder)
+		self.self_atten = Multi_Headed(emb_sz,use_mask=is_decoder, num_heads=num_heads)
 		self.is_decoder = is_decoder
 		if self.is_decoder:
-			self.self_context_atten = Multi_Headed(emb_sz,use_mask=False)
+			self.self_context_atten = Multi_Headed(emb_sz,use_mask=False, num_heads=num_heads)
 
 		self.layer_norm = tf.keras.layers.LayerNormalization(axis=-1)
 
@@ -193,8 +214,7 @@ class Transformer_Block(tf.keras.layers.Layer):
 			default=None, This is context from the encoder to be used as Keys and Values in self-attention function
 		"""
 
-		with av.trans_block(self.is_decoder):
-			atten_out = self.self_atten(inputs,inputs,inputs)
+		atten_out = self.self_atten(inputs,inputs,inputs)
 		atten_out+=inputs
 		atten_normalized = self.layer_norm(atten_out)
 
