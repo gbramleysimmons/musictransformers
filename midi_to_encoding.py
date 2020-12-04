@@ -129,14 +129,14 @@ def get_data(train_file="data/train", val_file="data/val",test_file="data/test",
         train = get_raw_data(train_filenames)
         val = get_raw_data(val_filenames)
         test = get_raw_data(test_filenames)
-        with open(train_file, "wb") as trainfile:
-            pickle.dump(train, trainfile)
+        if save_data:
+            with open(train_file, "wb") as trainfile:
+                pickle.dump(train, trainfile)
 
-        with open(test_file, "wb") as testfile:
-            pickle.dump(test, testfile)
-
-        with open(val_file, "wb") as valfile:
-            pickle.dump(val, valfile)
+            with open(test_file, "wb") as testfile:
+                pickle.dump(test, testfile)
+            with open(val_file, "wb") as valfile:
+                pickle.dump(val, valfile)
 
     return train, val, test
 def unpickle(file):
@@ -155,5 +155,6 @@ def main():
     print(len(train))
     print(len(test))
     print(len(val))
+
 if __name__ == '__main__':
     main()
