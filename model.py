@@ -21,7 +21,8 @@ class Transformer(tf.keras.Model):
 		self.hidden_layer_size = 50
 		self.learning_rate = 0.001
 		self.num_epochs = 1
-		self.window_size = 50
+		self.window_size = 4400
+		self.padding_index = ?
 		
 
 		# Optimizer
@@ -105,88 +106,67 @@ class Transformer(tf.keras.Model):
 		return super(Transformer_Seq2Seq, self).__call__(*args, **kwargs)
 
 
-def train(model, train_, train_, eng_padding_index):
+def train(model, train_data):
 	"""
 	Runs through one epoch - all training examples.
 
 	:param model: the initialized model to use for forward and backward pass
-	:param train_french: french train data (all data for training) of shape (num_sentences, 14)
-	:param train_english: english train data (all data for training) of shape (num_sentences, 15)
-	:param eng_padding_index: the padding index, the id of *PAD* token. This integer is used when masking padding labels.
+	:param train_data: (num_midis, window_size)
 	:return: None
 	"""
-
-
-
-
-
-        """
-        This function will be overhauled once we have a better understanding of preprocessing outputs
-
-        Right now it is till in terms of Assignment 4
-        """
-
-
-
 	
-
 	# Initializing masking function for later (may not be necessary)
-	masking_func = np.vectorize(lambda x: x != eng_padding_index)
+	masking_func = np.vectorize(lambda x: x != model.padding_index)
 	
 	# Shuffling inputs
-	order = tf.random.shuffle(range(len(train_english)))
-	train_french = tf.gather(train_french, order)
-	train_english = tf.gather(train_english, order)
+	order = tf.random.shuffle(range(len(train_data)))
+	train_data = tf.gather(train_data, order)
 
-	# Iterating over all inputs (given 1 epoch)
+	# Iterating over all inputs
 	for i in range(0, len(order), model.batch_size):
-		english_decoder = train_english[i : i + model.batch_size, :-1]
-		english_loss = train_english[i : i + model.batch_size, 1:]
-		french_batch = train_french[i : i + model.batch_size]
+		inputs = train_data[i : i + model.batch_size, :-1]
+		labels = train_data[i : i + model.batch_size, 1:]
 
 		# Ensuring full batch
-		if(len(english_loss) == model.batch_size):
+		if(len(encoder_input) == model.batch_size):
 
 			# Creating mask
-			mask = masking_func(english_loss)
+			mask = masking_func(labels)
 
 			# Forward pass
 			with tf.GradientTape() as tape:
-				probabilities = model(french_batch, english_decoder)
-				loss = model.loss_function(probabilities, english_loss, mask)
+				probabilities = model(inputs, inputs)
+				loss = model.loss_function(probabilities, labels, mask)
 
 			# Applying gradients
 			gradients = tape.gradient(loss, model.trainable_variables)
 			model.optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-
 	pass
 
-def test(model, test_french, test_english, eng_padding_index):
+def test(model, test_french, test_english):
 	"""
 	Runs through one epoch - all testing examples.
 
 	:param model: the initialized model to use for forward and backward pass
-	:param test_french: french test data (all data for testing) of shape (num_sentences, 14)
-	:param test_english: english test data (all data for testing) of shape (num_sentences, 15)
-	:param eng_padding_index: the padding index, the id of *PAD* token. This integer is used when masking padding labels.
+	:param test_data:test data (all data for testing) of shape (num_midis, window_size)
 	:returns: a tuple containing at index 0 the perplexity of the test set and at index 1 the per symbol accuracy on test set, 
 	e.g. (my_perplexity, my_accuracy)
 	"""
 
 	# Initializing masking function for later
-	masking_func = np.vectorize(lambda x: x != eng_padding_index)
+	masking_func = np.vectorize(lambda x: x != model.padding_index)
 
 	# Initializing iterators
 	symbol_count = 0
 	plex_sum = 0
 	accuracy_sum = 0
 
-	for i in range(0, len(test_english), model.batch_size):
-		english_decoder = test_english[i : i + model.batch_size, :-1]
-		english_loss = test_english[i : i + model.batch_size, 1:]
-		french_batch = test_french[i : i + model.batch_size]
+	for i in range(0, len(test_data), model.batch_size):
+		inputs = test_data[i : i + model.batch_size, :-1]
+		labels = test_data[i : i + model.batch_size, 1:]
+		
 		# Ensuring full batch
-		if(len(english_loss) == model.batch_size):
+		if(len(labels) == model.batch_size):
 
 			# Counting relevant metrics
 			mask = masking_func(english_loss)
@@ -194,13 +174,13 @@ def test(model, test_french, test_english, eng_padding_index):
 				if i: symbol_count += 1
 				
 				
-			probabilities = model(french_batch, english_decoder)
-			plex_sum += model.loss_function(probabilities, english_loss, mask)
-			accuracy_sum += model.accuracy_function(probabilities, english_loss, mask)
+			probabilities = model(inputs, inputs)
+			plex_sum += model.loss_function(probabilities, labels, mask)
+			accuracy_sum += model.accuracy_function(probabilities, labels, mask)
 
 	# Calculating per symbol accuracy
 	perplexity = np.exp(plex_sum / symbol_count)
-	accuracy = accuracy_sum / int(len(test_english) / model.batch_size)
+	accuracy = accuracy_sum / int(len(test_data) / model.batch_size)
 
 	return (perplexity, accuracy)
 
@@ -225,7 +205,7 @@ def main():
                 print("Perplexity", plex, "Accuracy", acc)
 	
 	# Run model to create mididata
-
+	
 
 if __name__ == '__main__':
 	main()
