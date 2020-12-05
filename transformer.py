@@ -85,13 +85,16 @@ def skew(rel_emb):
         Procedure:
                 - Pad a column to the leftmost position
                 - Reshape the matrix to shape (L + 1, L)
-                - Slice the matrix to the last L rows, and all columns
+                - Slice the matrix to the last L rows
 
         :param rel_emb: tensor of [batch_size x window_sz, window_sz]
         :return: skewed tensor of [batch_size x window_sz, window_sz]
         """
-
-        # Todo
+	batch_size = len(rel_emb)
+	window_size = len(rel_emb[0])
+	padded = np.pad(rel_emb, ((0,0),(0,0),(1,0)))
+	reshaped = np.reshape(padded, (batch_size, window_size + 1, window_size))
+	return reshaped[:,1:,:]
 
 
 class Multi_Headed(tf.keras.layers.Layer):
