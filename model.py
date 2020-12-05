@@ -188,17 +188,17 @@ def main():
         
 	print("Running preprocessing...")
 	# Implement preprocessing
-
+	train_data, test_data = ?
 	# Set input_size to the length of inputs (should be 413 iirc)
-	input_size = 413
+	input_size = len(train_data[0])
 	print("Preprocessing complete.")
 
 	model = Transformer(input_size)
 		
 	# Train and Test Model
 	for i in range(model.num_epochs):
-                train(model, train_french, train_english, eng_padding_index)
-                plex, acc = test(model, test_french, test_english, eng_padding_index)
+                train(model, train_data)
+                plex, acc = test(model, test_data)
 
                 # Printing resulatant perplexity and accuracy
                 print("Epoch:", i)
