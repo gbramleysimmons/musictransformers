@@ -143,7 +143,7 @@ def train(model, train_data):
 			model.optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 	pass
 
-def test(model, test_french, test_english):
+def test(model, test_data):
 	"""
 	Runs through one epoch - all testing examples.
 
