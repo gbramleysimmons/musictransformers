@@ -2,8 +2,7 @@ import numpy as np
 import mido
 import csv
 import pickle
-import progressbar
-
+from utils import *
 
 
 def files_from_csv(csv_filename):
@@ -18,11 +17,11 @@ def files_from_csv(csv_filename):
     with open(csv_filename) as csv_file:
         reader = csv.DictReader(csv_file)
         for row in reader:
-            if  row['split'] == "train":
+            if row['split'] == "train":
                 train.append(row['midi_filename'])
-            elif  row['split'] == "test":
+            elif row['split'] == "test":
                 test.append(row['midi_filename'])
-            elif  row['split'] == "validation":
+            elif row['split'] == "validation":
                 val.append(row['midi_filename'])
     return train, val, test
 
@@ -37,8 +36,8 @@ def create_encoding(mid):
     # midi files often have multiple tracks but for now we just want the one thats the longest
     max_t = max(mid.tracks, key=len)
 
-    data = []
     i = 0
+    data = []
     velocity_lst = []
     for msg in max_t:
         # these midi files only have types note_on and control_change message types
@@ -57,6 +56,7 @@ def create_encoding(mid):
             time_shifts = []
             time_shift = np.zeros(shape=125)
             delta_t = msg.time
+
             while delta_t >= 125:
                 time_shift[-1] = 1.0
                 time_shifts.append(time_shift)
@@ -64,16 +64,29 @@ def create_encoding(mid):
                 # not sure if this should be 125 or 124
                 delta_t -= 125
 
+            # we werent adding the leftover time to anything
+            time_shift[delta_t] = 1.0
+            time_shifts.append(time_shift)
+
             if msg.velocity != 0:
                 n_on[msg.note] = 1.0
 
             if msg.velocity == 0:
                 n_off[msg.note] = 1.0
 
-            velocity_lst.append(msg.velocity)
             # tbh not sure how this should work, should double check that
-            for time_shift in time_shifts:
-                data.append((n_on, n_off, velocity, time_shift))
+            for i, time_shift in enumerate(time_shifts):
+                """
+                i made it so that if the time extends past 125, we create a new vector with zeros 
+                for n_on, n_off, and velocity. If we just made another vector with the same values for 
+                these, it would be like another key press.
+                """
+                if i == 0:
+                    data.append((n_on, n_off, velocity, time_shift))
+                else:
+                    data.append((np.zeros(shape=128), np.zeros(shape=128), np.zeros(shape=32), time_shift))
+
+                velocity_lst.append(msg.velocity)
 
             i += 1
 
@@ -95,19 +108,17 @@ def get_raw_data(filenames):
     :return: train, val, test: training data, validation data, testing data in a 80/10/10 split
     '''
 
-    widgets = [
-        ' [', progressbar.Timer(), '] ',
-        progressbar.Bar(),
-        ' (', progressbar.AdaptiveETA(), ') ',
-    ]
     data = []
 
-    for i in progressbar.progressbar(range(len(filenames)), widgets=widgets):
-            midi_file = mido.MidiFile(filenames[i], clip=True)
-            encoding = create_encoding(midi_file)
-            data.append(encoding)
+    # i changed your progress bar bc it wasnt working on my computer...
+    for i, file in enumerate(filenames):
+        print_prgress_bar(i, len(filenames))
+        midi_file = mido.MidiFile(file, clip=True)
+        encoding = create_encoding(midi_file)
+        data.append(encoding)
 
     return data
+
 
 def get_data(train_file="data/train", val_file="data/val",test_file="data/test",
              csv_file="maestro-v2.0.0.csv", csv_prefix="data/", save_data=True):
@@ -124,8 +135,6 @@ def get_data(train_file="data/train", val_file="data/val",test_file="data/test",
         val_filenames = list(map(lambda x: csv_prefix + x, val_filenames))
         test_filenames = list(map(lambda x: csv_prefix + x, test_filenames))
 
-
-
         train = get_raw_data(train_filenames)
         val = get_raw_data(val_filenames)
         test = get_raw_data(test_filenames)
@@ -139,10 +148,13 @@ def get_data(train_file="data/train", val_file="data/val",test_file="data/test",
                 pickle.dump(val, valfile)
 
     return train, val, test
+
+
 def unpickle(file):
     with open(file, 'rb') as fo:
         array = pickle.load(fo, encoding='bytes')
     return array
+
 
 def get_pickled_data(train_file, val_file, test_file):
     train = unpickle(train_file)
@@ -150,7 +162,9 @@ def get_pickled_data(train_file, val_file, test_file):
     val = unpickle(val_file)
     return train, val, test
 
+
 def main():
+
     train, test, val = get_data()
 
     # add SPACE and PAD token to vocab, as the 414th and 415th one-hot value
