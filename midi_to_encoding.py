@@ -39,6 +39,9 @@ def create_encoding(mid):
     i = 0
     data = []
     velocity_lst = []
+
+    zeroed_note = np.zeros(shape=128)
+    zeroed_velocity = np.zeros(shape=32)
     for msg in max_t:
         # these midi files only have types note_on and control_change message types
         # the note_off types that the paper spoke about are represented as note_on message types with velocity=0
@@ -84,7 +87,7 @@ def create_encoding(mid):
                 if i == 0:
                     data.append((n_on, n_off, velocity, time_shift))
                 else:
-                    data.append((np.zeros(shape=128), np.zeros(shape=128), np.zeros(shape=32), time_shift))
+                    data.append((zeroed_note, zeroed_note, zeroed_velocity, time_shift))
 
                 velocity_lst.append(msg.velocity)
 
