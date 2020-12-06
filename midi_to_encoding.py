@@ -152,9 +152,20 @@ def get_pickled_data(train_file, val_file, test_file):
 
 def main():
     train, test, val = get_data()
-    print(len(train))
-    print(len(test))
-    print(len(val))
+
+    # add SPACE and PAD token to vocab, as the 414th and 415th one-hot value
+    for i in range(len(train)):
+        timesteps = len(train[i])
+        train[i] = np.hstack((train[i], np.zeros((timesteps, 1))))
+    for i in range(len(test)):
+        timesteps = len(test[i])
+        test[i] = np.hstack((test[i], np.zeros((timesteps, 1))))
+    for i in range(len(val)):
+        timesteps = len(val[i])
+        val[i] = np.hstack((val[i], np.zeros((timesteps, 1))))
+
+    return train, test, val
+
 
 if __name__ == '__main__':
     main()
