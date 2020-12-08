@@ -85,8 +85,9 @@ def skew(rel_emb):
     # rel_emb = np.asarray(rel_emb)
     batch_size = len(rel_emb)
     window_size = len(rel_emb[0])
+    input_size = len(rel_emb[0][0])
     padded = tf.pad(rel_emb, ((0,0),(0,0),(1,0)))
-    reshaped = tf.reshape(padded, (batch_size, window_size + 1, window_size))
+    reshaped = tf.reshape(padded, (batch_size, input_size + 1, window_size))
     return reshaped[:,1:,:]
 
 

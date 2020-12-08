@@ -5,6 +5,7 @@ import midi_to_encoding
 from midi_to_fig import *
 import sys
 import random
+from utils import encoding_to_midi
 
 
 
@@ -21,14 +22,21 @@ class Transformer(tf.keras.Model):
         # 0.01 performs better than 0.001, try 0.005
         self.learning_rate = 0.01
         self.num_epochs = 1
-		# max window size for full data set
+        # max window size for full data set
         # self.window_size = 17729
-		# temp window size for subset of data
-        self.window_size = 1000
+        # temp window size for subset of data
+        self.window_size = 2000
         self.space_index = 412
         self.padding_index = 413
         self.num_heads = 1
         self.vocab_size = 414
+
+        # generation hyper params
+        self.k = 7
+        self.p = 0.55
+        self.max_phrase_length = 7
+        self.phrase_rand_amount = 3
+
 
 
         # Optimizer
@@ -215,6 +223,94 @@ def pad_data(window_size, padding_index, array):
 
     return array
 
+def generate_sequence(model, start_sequence, length):
+    padded_sequence = np.asarray(pad_data(model.window_size, model.padding_index, [start_sequence]))[0]
+    # print(padded_sequence.shape)
+    final_sequence = start_sequence
+    k = model.k
+    p = model.p
+    count = 0
+    seq_index = len(start_sequence)
+    # loop until sequence is of the given length
+    while len(final_sequence) < model.window_size + length:
+        print(len(final_sequence))
+        # call model on the sequence to get the probability of the next 'word'
+        model_input = np.asarray([padded_sequence])
+        probs = model(model_input, model_input)[0][seq_index]
+        # Take the top K elements, and redistribute the probabilities among them (Top K sampling)
+        index_array = probs.numpy()
+        if padded_sequence[seq_index - 1] == model.space_index:
+            index_array[model.space_index] = 0
+        index_array = index_array.argsort()[-k:][::-1]
+        index_probs = tf.gather(probs, tf.constant(index_array))
+        index_probs = tf.nn.softmax(index_probs)
+
+        # Look at the first X words until their probabilites sum up to P (Top P "Nucleus" sampling)
+        prob_sum = 0
+        indices = []
+        i = 0
+        while prob_sum < p:
+            index = index_array[i]
+
+            prob = index_probs[i]
+            prob_sum += prob
+            indices.append(index)
+            i += 1
+        # choose an event randomly from those X words, weighted on their probability.
+        next_event = random.choices(indices, index_probs[:i], k=1)[0]
+
+        if next_event == model.space_index:
+            count = 0
+        else:
+            count += 1
+
+        if count > model.max_phrase_length:
+            next_event = model.space_index
+            count = np.random.choice(model.phrase_rand_amount)
+
+        final_sequence.append(next_event)
+        print("Next event is {}".format(next_event))
+        # print("Sequence length = {}".format(len(final_sequence)))
+        if seq_index < model.window_size - 1:
+            padded_sequence[seq_index] = next_event
+            seq_index += 1
+        else:
+            padded_sequence = np.asarray(final_sequence[-model.window_size:])
+
+
+
+    print("End of generate")
+    return final_sequence[model.window_size:]
+
+def convert_to_vectors(sequence, space_index=412, vector_length=413):
+    vectors = []
+    vector_indices = []
+    # go through each event in the sequence
+    for i in range(len(sequence)):
+        # append the event to vector_indices
+        event = sequence[i]
+        vector_indices.append(event)
+        # if the event is a space...
+        if event == space_index:
+            # create a vector for this timestep, filling in all the indices we have so far
+            vector = np.zeros(vector_length)
+            vector[vector_indices] = 1
+            # reset vector_indices
+            vector_indices = []
+            # append the vector to our vector list
+            vectors.append(vector)
+
+    if vector_indices:
+        vector = np.zeros(vector_length)
+        vector_indices.append(space_index)
+        vector[vector_indices] = 1
+        vectors.append(vector)
+
+
+    return np.asarray(vectors)
+
+
+
 def main():
 
     print("Running preprocessing...")
@@ -234,14 +330,12 @@ def main():
     print("Preprocessing complete.")
     train_data = np.asarray(train_data)
     test_data = np.asarray(test_data)
-	# slicing data to run on local, using the entire dataset causes memory issues
-    train_data = train_data[:, :1000]
-    test_data = test_data[:, :1000]
+    # slicing data to run on local, using the entire dataset causes memory issues
+    train_data = train_data[:, :model.window_size]
+    test_data = test_data[:, :model.window_size]
     # print((len(train_data), len(train_data[0])))
     train_data = np.hstack((train_data, np.full((train_data.shape[0], 1), model.space_index)))
     test_data = np.hstack((test_data, np.full((test_data.shape[0], 1), model.space_index)))
-
-    print(train_data.shape)
 
     # Train and Test Model
     for i in range(model.num_epochs):
@@ -253,7 +347,13 @@ def main():
         print("Perplexity", plex, "Accuracy", acc)
 
     # Run model to create mididata
+    start_seq = [67, 270, 412]
+    # start_seq = [45, 277, 412]
+    sequence = np.asarray(generate_sequence(model, start_seq, 2000))
 
+    vectors = convert_to_vectors(sequence)
+
+    midi = encoding_to_midi(vectors, "midi_test6.midi")
 
 if __name__ == '__main__':
     main()
