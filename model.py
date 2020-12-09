@@ -17,26 +17,26 @@ class Transformer(tf.keras.Model):
 
 
         # Hyperparameters
-        self.batch_size = 40
-        self.embedding_size = 50
-        self.hidden_layer_size = 50
+        self.batch_size = tf.Variable(40, trainable=False)
+        self.embedding_size = tf.Variable(50, trainable=False)
+        self.hidden_layer_size = tf.Variable(50, trainable=False)
         # 0.01 performs better than 0.001, try 0.005
-        self.learning_rate = 0.01
-        self.num_epochs = 1
+        self.learning_rate = tf.Variable(0.01, trainable=False)
+        self.num_epochs = tf.Variable(1, trainable=False)
         # max window size for full data set
-        # self.window_size = 17729
+        # self.window_size = 6000
         # temp window size for subset of data
-        self.window_size = 400
-        self.space_index = 412
-        self.padding_index = 413
-        self.num_heads = 1
-        self.vocab_size = 414
+        self.window_size = tf.Variable(400, trainable=False)
+        self.space_index = tf.Variable(412, trainable=False)
+        self.padding_index = tf.Variable(413, trainable=False)
+        self.num_heads = tf.Variable(1, trainable=False)
+        self.vocab_size = tf.Variable(414, trainable=False)
 
         # generation hyper params
-        self.k = 7
-        self.p = 0.55
-        self.max_phrase_length = 7
-        self.phrase_rand_amount = 3
+        self.max_phrase_length = tf.Variable(7, trainable=False)
+        self.phrase_rand_amount = tf.Variable(3, trainable=False)
+
+        self.train = tf.Variable(False, trainable=False)
 
 
 
@@ -44,21 +44,21 @@ class Transformer(tf.keras.Model):
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
 
         # Define english and french embedding layers:
-        self.encoder_emb = tf.keras.layers.Embedding(self.vocab_size, self.embedding_size)
-        self.decoder_emb = tf.keras.layers.Embedding(self.vocab_size, self.embedding_size)
+        self.encoder_emb = tf.keras.layers.Embedding(self.vocab_size.numpy(), self.embedding_size.numpy())
+        self.decoder_emb = tf.keras.layers.Embedding(self.vocab_size.numpy(), self.embedding_size.numpy())
 
         # Positional embedding not necessary in this implementation (apparently)
 
         # Define encoder and decoder layers:
-        self.encoder = transformer.Transformer_Block(self.embedding_size, False, self.window_size, num_heads=self.num_heads)
-        self.decoder = transformer.Transformer_Block(self.embedding_size, True, self.window_size, num_heads=self.num_heads)
+        self.encoder = transformer.Transformer_Block(self.embedding_size.numpy(), False, self.window_size.numpy(), num_heads=self.num_heads.numpy())
+        self.decoder = transformer.Transformer_Block(self.embedding_size.numpy(), True, self.window_size.numpy(), num_heads=self.num_heads.numpy())
 
         # Define dense layer(s)
-        self.dense_1 = tf.keras.layers.Dense(self.hidden_layer_size, activation="relu")
-        self.dense_2 = tf.keras.layers.Dense(self.vocab_size, activation="softmax")
+        self.dense_1 = tf.keras.layers.Dense(self.hidden_layer_size.numpy(), activation="relu")
+        self.dense_2 = tf.keras.layers.Dense(self.vocab_size.numpy(), activation="softmax")
 
     @tf.function
-    def call(self, encoder_input, decoder_input):
+    def call(self, encoder_input):
         """
         :param encoder_input:
         :param decoder_input:
@@ -73,7 +73,7 @@ class Transformer(tf.keras.Model):
         context = self.encoder(encoder_embedded)
 
         #3) Embed the decoder_input
-        decoder_embedded = self.decoder_emb(decoder_input)
+        decoder_embedded = self.decoder_emb(encoder_input)
 
         #4) Pass the decoder_input embeddings and result of the encoder to the decoder
         decoded = self.decoder(decoder_embedded, context)
@@ -133,28 +133,27 @@ def train(model):
 
     
     # Initializing masking function for later (may not be necessary)
-    masking_func = np.vectorize(lambda x: x != model.padding_index)
+    masking_func = np.vectorize(lambda x: x != model.padding_index.numpy())
     length = len(os.listdir("data/train"))
     global_max = 0
 
     # Iterating over all inputs
-    for i in range(0, length - model.batch_size, model.batch_size):
+    for i in range(0, length - model.batch_size.numpy(), model.batch_size.numpy()):
         train_data, batch_max = process(model, i, "data/train")
         global_max = max(global_max, batch_max)
-        print(global_max)
         
         inputs = train_data[:, :-1]
         labels = train_data[:, 1:]
 
         # Ensuring full batch
-        if(len(inputs) == model.batch_size):
+        if(len(inputs) == model.batch_size.numpy()):
 
             # Creating mask
             mask = masking_func(labels)
 
             # Forward pass
             with tf.GradientTape() as tape:
-                probabilities = model(inputs, inputs)
+                probabilities = model(inputs)
                 loss = model.loss_function(probabilities, labels, mask)
                 print("Training loss is {}".format(loss))
 
@@ -165,18 +164,18 @@ def train(model):
 
 def process(model, j, folder):
     
-    data = get_data_split(folder, j, model.batch_size)
+    data = get_data_split(folder, j, model.batch_size.numpy())
     # turn the midi files into one-dimensional vectors, with space tokens in between each timestep
     data = format_data(data)
 
     maximum = np.max(list(map(lambda x: len(x), data)))
     
-    data = pad_data(6000, model.padding_index, data)
+    data = pad_data(6000, model.padding_index.numpy(), data)
     data = np.asarray(data)
     # slicing data to run on local, using the entire dataset causes memory issues
-    data = data[:, :model.window_size]
+    data = data[:, :model.window_size.numpy()]
     
-    data = np.hstack((data, np.full((data.shape[0], 1), model.space_index)))
+    data = np.hstack((data, np.full((data.shape[0], 1), model.space_index.numpy())))
     
     return data, maximum
 
@@ -192,7 +191,7 @@ def test(model):
     """
 
     # Initializing masking function for later
-    masking_func = np.vectorize(lambda x: x != model.padding_index)
+    masking_func = np.vectorize(lambda x: x != model.padding_index.numpy())
 
     # Initializing iterators
     symbol_count = 0
@@ -202,16 +201,15 @@ def test(model):
 
     length = len(os.listdir("data/test"))
 
-    for i in range(0, length - model.batch_size, model.batch_size):
+    for i in range(0, length - model.batch_size.numpy(), model.batch_size.numpy()):
         test_data, batch_max = process(model, i, "data/test")
         global_max = max(global_max, batch_max)
-        print(global_max)
         
         inputs = test_data[:, :-1]
         labels = test_data[:, 1:]
 
         # Ensuring full batch
-        if(len(labels) == model.batch_size):
+        if(len(labels) == model.batch_size.numpy()):
 
             # Counting relevant metrics
             mask = masking_func(labels)
@@ -219,13 +217,13 @@ def test(model):
                 if i: symbol_count += 1
 
 
-            probabilities = model(inputs, inputs)
+            probabilities = model(inputs)
             plex_sum += model.loss_function(probabilities, labels, mask)
             accuracy_sum += model.accuracy_function(probabilities, labels, mask)
 
     # Calculating per symbol accuracy
     perplexity = np.exp(plex_sum / symbol_count)
-    accuracy = accuracy_sum / int(len(test_data) / model.batch_size)
+    accuracy = accuracy_sum / int(len(test_data) / model.batch_size.numpy())
 
     return (perplexity, accuracy)
 
@@ -252,23 +250,22 @@ def pad_data(window_size, padding_index, array):
     return array
 
 def generate_sequence(model, start_sequence, length):
-    padded_sequence = np.asarray(pad_data(model.window_size, model.padding_index, [start_sequence]))[0]
+    padded_sequence = np.asarray(pad_data(model.window_size.numpy(), model.padding_index.numpy(), [start_sequence]))[0]
     # print(padded_sequence.shape)
     final_sequence = start_sequence
-    k = model.k
-    p = model.p
+    k = 15
+    p = 0.60
     count = 0
     seq_index = len(start_sequence)
     # loop until sequence is of the given length
-    while len(final_sequence) < model.window_size + length:
-        print(len(final_sequence))
+    while len(final_sequence) < model.window_size.numpy() + length:
         # call model on the sequence to get the probability of the next 'word'
         model_input = np.asarray([padded_sequence])
-        probs = model(model_input, model_input)[0][seq_index]
+        probs = model(model_input)[0][seq_index]
         # Take the top K elements, and redistribute the probabilities among them (Top K sampling)
         index_array = probs.numpy()
-        if padded_sequence[seq_index - 1] == model.space_index:
-            index_array[model.space_index] = 0
+        if padded_sequence[seq_index - 1] == model.space_index.numpy():
+            index_array[model.space_index.numpy()] = 0
         index_array = index_array.argsort()[-k:][::-1]
         index_probs = tf.gather(probs, tf.constant(index_array))
         index_probs = tf.nn.softmax(index_probs)
@@ -286,29 +283,25 @@ def generate_sequence(model, start_sequence, length):
             i += 1
         # choose an event randomly from those X words, weighted on their probability.
         next_event = random.choices(indices, index_probs[:i], k=1)[0]
-
-        if next_event == model.space_index:
+        if next_event == model.space_index.numpy():
             count = 0
         else:
             count += 1
 
-        if count > model.max_phrase_length:
-            next_event = model.space_index
-            count = np.random.choice(model.phrase_rand_amount)
-
+        if count > model.max_phrase_length.numpy():
+            next_event = model.space_index.numpy()
+            count = np.random.choice(model.phrase_rand_amount.numpy())
         final_sequence.append(next_event)
-        print("Next event is {}".format(next_event))
-        # print("Sequence length = {}".format(len(final_sequence)))
-        if seq_index < model.window_size - 1:
+        if seq_index < model.window_size.numpy() - 1:
             padded_sequence[seq_index] = next_event
             seq_index += 1
         else:
-            padded_sequence = np.asarray(final_sequence[-model.window_size:])
+            padded_sequence = np.asarray(final_sequence[-model.window_size.numpy():])
 
 
 
     print("End of generate")
-    return final_sequence[model.window_size:]
+    return final_sequence[model.window_size.numpy():]
 
 def convert_to_vectors(sequence, space_index=412, vector_length=413):
     vectors = []
@@ -337,29 +330,50 @@ def convert_to_vectors(sequence, space_index=412, vector_length=413):
 
     return np.asarray(vectors)
 
+def singleCall(model):
+    masking_func = np.vectorize(lambda x: x != model.padding_index.numpy())
+    train_data, batch_max = process(model, 0, "data/train")
+    inputs = train_data[:, :-1]
+    labels = train_data[:, 1:]
+    mask = masking_func(labels)
 
+    # Forward pass
+    with tf.GradientTape() as tape:
+        probabilities = model(inputs)
+        loss = model.loss_function(probabilities, labels, mask)
+
+    # Applying gradients
+    gradients = tape.gradient(loss, model.trainable_variables)
+    model.optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+    pass
+    
 
 def main():
     model = Transformer()
+    singleCall(model)
+    
     #model.load_weights("model_weights")
+    
     # Train and Test Model
-    for i in range(model.num_epochs):
-        train(model)
-        plex, acc = test(model)
+    if True:
+        for i in range(model.num_epochs.numpy()):
+            train(model)
+            plex, acc = test(model)
 
-        # Printing resulatant perplexity and accuracy
-        print("Epoch:", i)
-        print("Perplexity", plex, "Accuracy", acc)
+            # Printing resulatant perplexity and accuracy
+            print("Epoch:", i)
+            print("Perplexity", plex, "Accuracy", acc)
 
-    model.save_weights("model_weights", True)
+    model.save_weights("model_weights")
     # Run model to create mididata
     start_seq = [67, 270, 412]
     # start_seq = [45, 277, 412]
     sequence = np.asarray(generate_sequence(model, start_seq, 2000))
-
+    print(sequence)
+    print(sequence[0:300])
     vectors = convert_to_vectors(sequence)
 
-    midi = encoding_to_midi(vectors, "midi_test6.midi")
+    midi = encoding_to_midi(vectors, "midi_test7.midi")
 
 if __name__ == '__main__':
     main()
