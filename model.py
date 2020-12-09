@@ -1,10 +1,12 @@
 import numpy as np
 import tensorflow as tf
 import transformer
-import midi_to_encoding
+from midi_to_encoding import *
 from midi_to_fig import *
 import sys
 import random
+import os
+from utils import encoding_to_midi
 
 
 
@@ -15,41 +17,48 @@ class Transformer(tf.keras.Model):
 
 
         # Hyperparameters
-        self.batch_size = 5
-        self.embedding_size = 50
-        self.hidden_layer_size = 50
+        self.batch_size = tf.Variable(40, trainable=False)
+        self.embedding_size = tf.Variable(50, trainable=False)
+        self.hidden_layer_size = tf.Variable(50, trainable=False)
         # 0.01 performs better than 0.001, try 0.005
-        self.learning_rate = 0.01
-        self.num_epochs = 1
-		# max window size for full data set
-        # self.window_size = 17729
-		# temp window size for subset of data
-        self.window_size = 1000
-        self.space_index = 412
-        self.padding_index = 413
-        self.num_heads = 1
-        self.vocab_size = 414
+        self.learning_rate = tf.Variable(0.01, trainable=False)
+        self.num_epochs = tf.Variable(1, trainable=False)
+        # max window size for full data set
+        # self.window_size = 6000
+        # temp window size for subset of data
+        self.window_size = tf.Variable(400, trainable=False)
+        self.space_index = tf.Variable(412, trainable=False)
+        self.padding_index = tf.Variable(413, trainable=False)
+        self.num_heads = tf.Variable(1, trainable=False)
+        self.vocab_size = tf.Variable(414, trainable=False)
+
+        # generation hyper params
+        self.max_phrase_length = tf.Variable(7, trainable=False)
+        self.phrase_rand_amount = tf.Variable(3, trainable=False)
+
+        self.train = tf.Variable(False, trainable=False)
+
 
 
         # Optimizer
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
 
         # Define english and french embedding layers:
-        self.encoder_emb = tf.keras.layers.Embedding(self.vocab_size, self.embedding_size)
-        self.decoder_emb = tf.keras.layers.Embedding(self.vocab_size, self.embedding_size)
+        self.encoder_emb = tf.keras.layers.Embedding(self.vocab_size.numpy(), self.embedding_size.numpy())
+        self.decoder_emb = tf.keras.layers.Embedding(self.vocab_size.numpy(), self.embedding_size.numpy())
 
         # Positional embedding not necessary in this implementation (apparently)
 
         # Define encoder and decoder layers:
-        self.encoder = transformer.Transformer_Block(self.embedding_size, False, self.window_size, num_heads=self.num_heads)
-        self.decoder = transformer.Transformer_Block(self.embedding_size, True, self.window_size, num_heads=self.num_heads)
+        self.encoder = transformer.Transformer_Block(self.embedding_size.numpy(), False, self.window_size.numpy(), num_heads=self.num_heads.numpy())
+        self.decoder = transformer.Transformer_Block(self.embedding_size.numpy(), True, self.window_size.numpy(), num_heads=self.num_heads.numpy())
 
         # Define dense layer(s)
-        self.dense_1 = tf.keras.layers.Dense(self.hidden_layer_size, activation="relu")
-        self.dense_2 = tf.keras.layers.Dense(self.vocab_size, activation="softmax")
+        self.dense_1 = tf.keras.layers.Dense(self.hidden_layer_size.numpy(), activation="relu")
+        self.dense_2 = tf.keras.layers.Dense(self.vocab_size.numpy(), activation="softmax")
 
     @tf.function
-    def call(self, encoder_input, decoder_input):
+    def call(self, encoder_input):
         """
         :param encoder_input:
         :param decoder_input:
@@ -64,7 +73,7 @@ class Transformer(tf.keras.Model):
         context = self.encoder(encoder_embedded)
 
         #3) Embed the decoder_input
-        decoder_embedded = self.decoder_emb(decoder_input)
+        decoder_embedded = self.decoder_emb(encoder_input)
 
         #4) Pass the decoder_input embeddings and result of the encoder to the decoder
         decoded = self.decoder(decoder_embedded, context)
@@ -113,7 +122,7 @@ class Transformer(tf.keras.Model):
     # 	return super(Transformer_Seq2Seq, self).__call__(*args, **kwargs)
 
 
-def train(model, train_data):
+def train(model):
     """
     Runs through one epoch - all training examples.
 
@@ -122,27 +131,29 @@ def train(model, train_data):
     :return: None
     """
 
+    
     # Initializing masking function for later (may not be necessary)
-    masking_func = np.vectorize(lambda x: x != model.padding_index)
-
-    # Shuffling inputs
-    order = tf.random.shuffle(range(len(train_data)))
-    train_data = tf.gather(train_data, order)
+    masking_func = np.vectorize(lambda x: x != model.padding_index.numpy())
+    length = len(os.listdir("data/train"))
+    global_max = 0
 
     # Iterating over all inputs
-    for i in range(0, len(order), model.batch_size):
-        inputs = train_data[i : i + model.batch_size, :-1]
-        labels = train_data[i : i + model.batch_size, 1:]
+    for i in range(0, length - model.batch_size.numpy(), model.batch_size.numpy()):
+        train_data, batch_max = process(model, i, "data/train")
+        global_max = max(global_max, batch_max)
+        
+        inputs = train_data[:, :-1]
+        labels = train_data[:, 1:]
 
         # Ensuring full batch
-        if(len(inputs) == model.batch_size):
+        if(len(inputs) == model.batch_size.numpy()):
 
             # Creating mask
             mask = masking_func(labels)
 
             # Forward pass
             with tf.GradientTape() as tape:
-                probabilities = model(inputs, inputs)
+                probabilities = model(inputs)
                 loss = model.loss_function(probabilities, labels, mask)
                 print("Training loss is {}".format(loss))
 
@@ -151,7 +162,25 @@ def train(model, train_data):
             model.optimizer.apply_gradients(zip(gradients, model.trainable_variables))
     pass
 
-def test(model, test_data):
+def process(model, j, folder):
+    
+    data = get_data_split(folder, j, model.batch_size.numpy())
+    # turn the midi files into one-dimensional vectors, with space tokens in between each timestep
+    data = format_data(data)
+
+    maximum = np.max(list(map(lambda x: len(x), data)))
+    
+    data = pad_data(6000, model.padding_index.numpy(), data)
+    data = np.asarray(data)
+    # slicing data to run on local, using the entire dataset causes memory issues
+    data = data[:, :model.window_size.numpy()]
+    
+    data = np.hstack((data, np.full((data.shape[0], 1), model.space_index.numpy())))
+    
+    return data, maximum
+
+
+def test(model):
     """
     Runs through one epoch - all testing examples.
 
@@ -162,19 +191,25 @@ def test(model, test_data):
     """
 
     # Initializing masking function for later
-    masking_func = np.vectorize(lambda x: x != model.padding_index)
+    masking_func = np.vectorize(lambda x: x != model.padding_index.numpy())
 
     # Initializing iterators
     symbol_count = 0
     plex_sum = 0
     accuracy_sum = 0
+    global_max = 0
 
-    for i in range(0, len(test_data), model.batch_size):
-        inputs = test_data[i : i + model.batch_size, :-1]
-        labels = test_data[i : i + model.batch_size, 1:]
+    length = len(os.listdir("data/test"))
+
+    for i in range(0, length - model.batch_size.numpy(), model.batch_size.numpy()):
+        test_data, batch_max = process(model, i, "data/test")
+        global_max = max(global_max, batch_max)
+        
+        inputs = test_data[:, :-1]
+        labels = test_data[:, 1:]
 
         # Ensuring full batch
-        if(len(labels) == model.batch_size):
+        if(len(labels) == model.batch_size.numpy()):
 
             # Counting relevant metrics
             mask = masking_func(labels)
@@ -182,13 +217,13 @@ def test(model, test_data):
                 if i: symbol_count += 1
 
 
-            probabilities = model(inputs, inputs)
+            probabilities = model(inputs)
             plex_sum += model.loss_function(probabilities, labels, mask)
             accuracy_sum += model.accuracy_function(probabilities, labels, mask)
 
     # Calculating per symbol accuracy
     perplexity = np.exp(plex_sum / symbol_count)
-    accuracy = accuracy_sum / int(len(test_data) / model.batch_size)
+    accuracy = accuracy_sum / int(len(test_data) / model.batch_size.numpy())
 
     return (perplexity, accuracy)
 
@@ -212,48 +247,133 @@ def pad_data(window_size, padding_index, array):
             padding = np.full((missing_steps), padding_index)
             midi = np.append(midi, padding)
             array[i] = midi
-
     return array
 
+def generate_sequence(model, start_sequence, length):
+    padded_sequence = np.asarray(pad_data(model.window_size.numpy(), model.padding_index.numpy(), [start_sequence]))[0]
+    # print(padded_sequence.shape)
+    final_sequence = start_sequence
+    k = 15
+    p = 0.60
+    count = 0
+    seq_index = len(start_sequence)
+    # loop until sequence is of the given length
+    while len(final_sequence) < model.window_size.numpy() + length:
+        # call model on the sequence to get the probability of the next 'word'
+        model_input = np.asarray([padded_sequence])
+        probs = model(model_input)[0][seq_index]
+        # Take the top K elements, and redistribute the probabilities among them (Top K sampling)
+        index_array = probs.numpy()
+        if padded_sequence[seq_index - 1] == model.space_index.numpy():
+            index_array[model.space_index.numpy()] = 0
+        index_array = index_array.argsort()[-k:][::-1]
+        index_probs = tf.gather(probs, tf.constant(index_array))
+        index_probs = tf.nn.softmax(index_probs)
+
+        # Look at the first X words until their probabilites sum up to P (Top P "Nucleus" sampling)
+        prob_sum = 0
+        indices = []
+        i = 0
+        while prob_sum < p:
+            index = index_array[i]
+
+            prob = index_probs[i]
+            prob_sum += prob
+            indices.append(index)
+            i += 1
+        # choose an event randomly from those X words, weighted on their probability.
+        next_event = random.choices(indices, index_probs[:i], k=1)[0]
+        if next_event == model.space_index.numpy():
+            count = 0
+        else:
+            count += 1
+
+        if count > model.max_phrase_length.numpy():
+            next_event = model.space_index.numpy()
+            count = np.random.choice(model.phrase_rand_amount.numpy())
+        final_sequence.append(next_event)
+        if seq_index < model.window_size.numpy() - 1:
+            padded_sequence[seq_index] = next_event
+            seq_index += 1
+        else:
+            padded_sequence = np.asarray(final_sequence[-model.window_size.numpy():])
+
+
+
+    print("End of generate")
+    return final_sequence[model.window_size.numpy():]
+
+def convert_to_vectors(sequence, space_index=412, vector_length=413):
+    vectors = []
+    vector_indices = []
+    # go through each event in the sequence
+    for i in range(len(sequence)):
+        # append the event to vector_indices
+        event = sequence[i]
+        vector_indices.append(event)
+        # if the event is a space...
+        if event == space_index:
+            # create a vector for this timestep, filling in all the indices we have so far
+            vector = np.zeros(vector_length)
+            vector[vector_indices] = 1
+            # reset vector_indices
+            vector_indices = []
+            # append the vector to our vector list
+            vectors.append(vector)
+
+    if vector_indices:
+        vector = np.zeros(vector_length)
+        vector_indices.append(space_index)
+        vector[vector_indices] = 1
+        vectors.append(vector)
+
+
+    return np.asarray(vectors)
+
+def singleCall(model):
+    masking_func = np.vectorize(lambda x: x != model.padding_index.numpy())
+    train_data, batch_max = process(model, 0, "data/train")
+    inputs = train_data[:, :-1]
+    labels = train_data[:, 1:]
+    mask = masking_func(labels)
+
+    # Forward pass
+    with tf.GradientTape() as tape:
+        probabilities = model(inputs)
+        loss = model.loss_function(probabilities, labels, mask)
+
+    # Applying gradients
+    gradients = tape.gradient(loss, model.trainable_variables)
+    model.optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+    pass
+    
+
 def main():
-
-    print("Running preprocessing...")
-    # Implement preprocessing
-    train_data, test_data, val_data = midi_to_encoding.main()
-    # turn the midi files into one-dimensional vectors, with space tokens in between each timestep
-    train_data = format_data(train_data)
-    test_data = format_data(test_data)
-    val_data = format_data(val_data)
-
     model = Transformer()
-
-    train_data = pad_data(17730, model.padding_index, train_data)
-    test_data = pad_data(17730, model.padding_index, test_data)
-    val_data = pad_data(17730, model.padding_index, val_data)
-
-    print("Preprocessing complete.")
-    train_data = np.asarray(train_data)
-    test_data = np.asarray(test_data)
-	# slicing data to run on local, using the entire dataset causes memory issues
-    train_data = train_data[:, :1000]
-    test_data = test_data[:, :1000]
-    # print((len(train_data), len(train_data[0])))
-    train_data = np.hstack((train_data, np.full((train_data.shape[0], 1), model.space_index)))
-    test_data = np.hstack((test_data, np.full((test_data.shape[0], 1), model.space_index)))
-
-    print(train_data.shape)
-
+    singleCall(model)
+    
+    #model.load_weights("model_weights")
+    
     # Train and Test Model
-    for i in range(model.num_epochs):
-        train(model, train_data)
-        plex, acc = test(model, test_data)
+    if True:
+        for i in range(model.num_epochs.numpy()):
+            train(model)
+            plex, acc = test(model)
 
-        # Printing resulatant perplexity and accuracy
-        print("Epoch:", i)
-        print("Perplexity", plex, "Accuracy", acc)
+            # Printing resulatant perplexity and accuracy
+            print("Epoch:", i)
+            print("Perplexity", plex, "Accuracy", acc)
 
+    model.save_weights("model_weights")
     # Run model to create mididata
+    start_seq = [67, 270, 412]
+    # start_seq = [45, 277, 412]
+    sequence = np.asarray(generate_sequence(model, start_seq, 2000))
+    print(sequence)
+    print(sequence[0:300])
+    vectors = convert_to_vectors(sequence)
 
+    midi = encoding_to_midi(vectors, "midi_test7.midi")
 
 if __name__ == '__main__':
     main()
