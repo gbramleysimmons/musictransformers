@@ -1,10 +1,11 @@
 import numpy as np
 import tensorflow as tf
 import transformer
-import midi_to_encoding
+from midi_to_encoding import *
 from midi_to_fig import *
 import sys
 import random
+import os
 from utils import encoding_to_midi
 
 
@@ -16,7 +17,7 @@ class Transformer(tf.keras.Model):
 
 
         # Hyperparameters
-        self.batch_size = 5
+        self.batch_size = 40
         self.embedding_size = 50
         self.hidden_layer_size = 50
         # 0.01 performs better than 0.001, try 0.005
@@ -25,7 +26,7 @@ class Transformer(tf.keras.Model):
         # max window size for full data set
         # self.window_size = 17729
         # temp window size for subset of data
-        self.window_size = 2000
+        self.window_size = 400
         self.space_index = 412
         self.padding_index = 413
         self.num_heads = 1
@@ -121,7 +122,7 @@ class Transformer(tf.keras.Model):
     # 	return super(Transformer_Seq2Seq, self).__call__(*args, **kwargs)
 
 
-def train(model, train_data):
+def train(model):
     """
     Runs through one epoch - all training examples.
 
@@ -130,17 +131,20 @@ def train(model, train_data):
     :return: None
     """
 
+    
     # Initializing masking function for later (may not be necessary)
     masking_func = np.vectorize(lambda x: x != model.padding_index)
-
-    # Shuffling inputs
-    order = tf.random.shuffle(range(len(train_data)))
-    train_data = tf.gather(train_data, order)
+    length = len(os.listdir("data/train"))
+    global_max = 0
 
     # Iterating over all inputs
-    for i in range(0, len(order), model.batch_size):
-        inputs = train_data[i : i + model.batch_size, :-1]
-        labels = train_data[i : i + model.batch_size, 1:]
+    for i in range(0, length - model.batch_size, model.batch_size):
+        train_data, batch_max = process(model, i, "data/train")
+        global_max = max(global_max, batch_max)
+        print(global_max)
+        
+        inputs = train_data[:, :-1]
+        labels = train_data[:, 1:]
 
         # Ensuring full batch
         if(len(inputs) == model.batch_size):
@@ -159,7 +163,25 @@ def train(model, train_data):
             model.optimizer.apply_gradients(zip(gradients, model.trainable_variables))
     pass
 
-def test(model, test_data):
+def process(model, j, folder):
+    
+    data = get_data_split(folder, j, model.batch_size)
+    # turn the midi files into one-dimensional vectors, with space tokens in between each timestep
+    data = format_data(data)
+
+    maximum = np.max(list(map(lambda x: len(x), data)))
+    
+    data = pad_data(6000, model.padding_index, data)
+    data = np.asarray(data)
+    # slicing data to run on local, using the entire dataset causes memory issues
+    data = data[:, :model.window_size]
+    
+    data = np.hstack((data, np.full((data.shape[0], 1), model.space_index)))
+    
+    return data, maximum
+
+
+def test(model):
     """
     Runs through one epoch - all testing examples.
 
@@ -176,10 +198,17 @@ def test(model, test_data):
     symbol_count = 0
     plex_sum = 0
     accuracy_sum = 0
+    global_max = 0
 
-    for i in range(0, len(test_data), model.batch_size):
-        inputs = test_data[i : i + model.batch_size, :-1]
-        labels = test_data[i : i + model.batch_size, 1:]
+    length = len(os.listdir("data/test"))
+
+    for i in range(0, length - model.batch_size, model.batch_size):
+        test_data, batch_max = process(model, i, "data/test")
+        global_max = max(global_max, batch_max)
+        print(global_max)
+        
+        inputs = test_data[:, :-1]
+        labels = test_data[:, 1:]
 
         # Ensuring full batch
         if(len(labels) == model.batch_size):
@@ -220,7 +249,6 @@ def pad_data(window_size, padding_index, array):
             padding = np.full((missing_steps), padding_index)
             midi = np.append(midi, padding)
             array[i] = midi
-
     return array
 
 def generate_sequence(model, start_sequence, length):
@@ -312,40 +340,18 @@ def convert_to_vectors(sequence, space_index=412, vector_length=413):
 
 
 def main():
-
-    print("Running preprocessing...")
-    # Implement preprocessing
-    train_data, test_data, val_data = midi_to_encoding.main()
-    # turn the midi files into one-dimensional vectors, with space tokens in between each timestep
-    train_data = format_data(train_data)
-    test_data = format_data(test_data)
-    val_data = format_data(val_data)
-
     model = Transformer()
-
-    train_data = pad_data(17730, model.padding_index, train_data)
-    test_data = pad_data(17730, model.padding_index, test_data)
-    val_data = pad_data(17730, model.padding_index, val_data)
-
-    print("Preprocessing complete.")
-    train_data = np.asarray(train_data)
-    test_data = np.asarray(test_data)
-    # slicing data to run on local, using the entire dataset causes memory issues
-    train_data = train_data[:, :model.window_size]
-    test_data = test_data[:, :model.window_size]
-    # print((len(train_data), len(train_data[0])))
-    train_data = np.hstack((train_data, np.full((train_data.shape[0], 1), model.space_index)))
-    test_data = np.hstack((test_data, np.full((test_data.shape[0], 1), model.space_index)))
-
+    #model.load_weights("model_weights")
     # Train and Test Model
     for i in range(model.num_epochs):
-        train(model, train_data)
-        plex, acc = test(model, test_data)
+        train(model)
+        plex, acc = test(model)
 
         # Printing resulatant perplexity and accuracy
         print("Epoch:", i)
         print("Perplexity", plex, "Accuracy", acc)
 
+    model.save_weights("model_weights", True)
     # Run model to create mididata
     start_seq = [67, 270, 412]
     # start_seq = [45, 277, 412]
