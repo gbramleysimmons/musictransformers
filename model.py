@@ -24,9 +24,9 @@ class Transformer(tf.keras.Model):
         self.learning_rate = tf.Variable(0.01, trainable=False)
         self.num_epochs = tf.Variable(1, trainable=False)
         # max window size for full data set
-        # self.window_size = 6000
+        
         # temp window size for subset of data
-        self.window_size = tf.Variable(400, trainable=False)
+        self.window_size = tf.Variable(6000, trainable=False)
         self.space_index = tf.Variable(412, trainable=False)
         self.padding_index = tf.Variable(413, trainable=False)
         self.num_heads = tf.Variable(1, trainable=False)
@@ -253,8 +253,8 @@ def generate_sequence(model, start_sequence, length):
     padded_sequence = np.asarray(pad_data(model.window_size.numpy(), model.padding_index.numpy(), [start_sequence]))[0]
     # print(padded_sequence.shape)
     final_sequence = start_sequence
-    k = 15
-    p = 0.60
+    k = 30
+    p = 0.80
     count = 0
     seq_index = len(start_sequence)
     # loop until sequence is of the given length
@@ -355,7 +355,7 @@ def main():
     #model.load_weights("model_weights")
     
     # Train and Test Model
-    if True:
+    if False:
         for i in range(model.num_epochs.numpy()):
             train(model)
             plex, acc = test(model)
@@ -368,12 +368,12 @@ def main():
     # Run model to create mididata
     start_seq = [67, 270, 412]
     # start_seq = [45, 277, 412]
-    sequence = np.asarray(generate_sequence(model, start_seq, 2000))
+    sequence = np.asarray(generate_sequence(model, start_seq, 4000))
     print(sequence)
     print(sequence[0:300])
     vectors = convert_to_vectors(sequence)
 
-    midi = encoding_to_midi(vectors, "midi_test7.midi")
+    midi = encoding_to_midi(vectors, "midi_out1.midi")
 
 if __name__ == '__main__':
     main()
