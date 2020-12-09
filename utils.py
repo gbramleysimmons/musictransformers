@@ -136,3 +136,52 @@ def calculate_median_velocity(csv_filename):
     print('Mean Velocity of All Midi Files: {}'.format(statistics.mean(mean_velocity_lst)))
     print('Max Velocity: {}'.format(max(max_velocity_lst)))
     print('Mean Max Velocity: {}'.format(statistics.mean(max_velocity_lst)))
+
+
+def calculate_midi_lengths(csv_filename):
+    """
+    calculates some statistics about the original velocities. I think we can use these to normalize the
+    outputted velocities to the original scale.
+
+    Results:
+    Median Velocity of All Midi Files: 66.0
+    Mean Velocity of All Midi Files: 63.88
+    Max Velocity: 126
+    Mean Max Velocity: 108.72
+
+
+    :param csv_filename:
+    :return:
+    """
+    total_duration = 0
+    total_msg = 0
+    total_msg_per_sec = 0
+    data = {}
+    with open(csv_filename) as csv_file:
+        reader = csv.DictReader(csv_file)
+        for row in reader:
+            data['data/' + row['midi_filename']] = {'duration': float(row['duration']), 'num_msg': 0}
+
+    for i, file in enumerate(data.keys()):
+        midi_file = mido.MidiFile(file, clip=True)
+        max_msg_len = len(max(midi_file.tracks, key=len))
+        data[file]['num_msg'] = max_msg_len
+
+        if i % 10 == 0 or i == len(data) - 1:
+            print('{} / {}'.format(i + 1, len(data)))
+
+    for file, d in data.items():
+        msg_per_sec = d['num_msg'] / d['duration']
+        total_msg_per_sec += msg_per_sec
+
+    mean_msg = total_msg / len(data)
+    mean_duration = total_duration / len(data)
+    mean_msg_per_sec = total_msg_per_sec / len(data)
+
+    print('Mean Number of Messages: {}'.format(mean_msg))
+    print('Mean Duration in Seconds: {}'.format(mean_duration))
+    print('Mean Messages per Second: {}'.format(mean_msg_per_sec))
+
+    msg_num_lst = [data[x]['num_msg'] for x in data.keys()]
+
+    print(statistics.stdev(msg_num_lst))
