@@ -28,81 +28,79 @@ def files_from_csv(csv_filename):
 
 
 def create_encoding(mid):
-	'''
-	Creates an encoding of one musical performance
-	:param mid:
-	:return:
-	'''
+    '''
+    Creates an encoding of one musical performance
+    :param mid:
+    :return:
+    '''
 
-	# midi files often have multiple tracks but for now we just want the one thats the longest
-	max_t = max(mid.tracks, key=len)
+    # midi files often have multiple tracks but for now we just want the one thats the longest
+    max_t = max(mid.tracks, key=len)
 
-	i = 0
-	data = []
-	velocity_lst = []
+    data = []
+    velocity_lst = []
 
-	zeroed_note = np.zeros(shape=128)
-	zeroed_velocity = np.zeros(shape=32)
-	for msg in max_t:
-		# these midi files only have types note_on and control_change message types
-		# the note_off types that the paper spoke about are represented as note_on message types with velocity=0
-		if msg.type == "note_on":
+    zeroed_note = np.zeros(shape=128)
+    zeroed_velocity = np.zeros(shape=32)
+    zeroed_time = np.zeros(shape=125)
+    for msg in max_t:
+        # these midi files only have types note_on and control_change message types
+        # the note_off types that the paper spoke about are represented as note_on message types with velocity=0
+        if msg.type == "note_on":
 
-			# there are 128 total notes
-			n_on = np.zeros(shape=128)
-			n_off = np.zeros(shape=128)
+            # there are 128 total notes
+            n_on = np.zeros(shape=128)
+            n_off = np.zeros(shape=128)
 
-			# the number of values for velocity varies with the midi file so I think we need to normalize it
-			velocity = np.zeros(shape=32)
+            # the number of values for velocity varies with the midi file so I think we need to normalize it
+            velocity = np.zeros(shape=32)
 
-			# these objects have a 'time' attribute, which represents the change in time
-			# if the change in time is above 125, we create a second time event
-			time_shifts = []
-			time_shift = np.zeros(shape=125)
-			delta_t = msg.time
+            # these objects have a 'time' attribute, which represents the change in time
+            # if the change in time is above 125, we create a second time event
+            time_shifts = []
+            time_shift = np.zeros(shape=125)
+            delta_t = msg.time
 
-			while delta_t >= 125:
-				time_shift[-1] = 1.0
-				time_shifts.append(time_shift)
-				time_shift = np.zeros(shape=125)
-				# not sure if this should be 125 or 124
-				delta_t -= 125
+            while delta_t >= 125:
+                time_shift[-1] = 1.0
+                time_shifts.append(time_shift)
+                time_shift = np.zeros(shape=125)
+                # not sure if this should be 125 or 124
+                delta_t -= 125
 
-			# we werent adding the leftover time to anything
-			time_shift[delta_t] = 1.0
-			time_shifts.append(time_shift)
+            # we werent adding the leftover time to anything
+            time_shift[delta_t] = 1.0
+            time_shifts.append(time_shift)
 
-			if msg.velocity != 0:
-				n_on[msg.note] = 1.0
+            if msg.velocity != 0:
+                n_on[msg.note] = 1.0
 
-			if msg.velocity == 0:
-				n_off[msg.note] = 1.0
+            if msg.velocity == 0:
+                n_off[msg.note] = 1.0
 
-			# tbh not sure how this should work, should double check that
-			for i, time_shift in enumerate(time_shifts):
-				"""
-				i made it so that if the time extends past 125, we create a new vector with zeros 
-				for n_on, n_off, and velocity. If we just made another vector with the same values for 
-				these, it would be like another key press.
-				"""
-				if i == 0:
-					data.append((n_on, n_off, velocity, time_shift))
-				else:
-					data.append((zeroed_note, zeroed_note, zeroed_velocity, time_shift))
+            # tbh not sure how this should work, should double check that
+            data.append((n_on, n_off, velocity, zeroed_time))
+            velocity_lst.append(msg.velocity)
 
-				velocity_lst.append(msg.velocity)
+            for time_shift in time_shifts:
+                """
+                i made it so that if the time extends past 125, we create a new vector with zeros 
+                for n_on, n_off, and velocity. If we just made another vector with the same values for 
+                these, it would be like another key press.
+                """
+                data.append((zeroed_note, zeroed_note, zeroed_velocity, time_shift))
 
-			i += 1
+                velocity_lst.append(msg.velocity)
 
-	encoding = np.zeros(shape=(len(data), 413))
+    encoding = np.zeros(shape=(len(data), 413))
 
-	# normalizing velocity values for a midi file and placing the concatenated one hot into the final array
-	for i, (n_on, n_off, velocity, time_shift) in enumerate(data):
-		normalized_velocity = int(np.floor(((velocity_lst[i] - min(velocity_lst)) / (max(velocity_lst) - min(velocity_lst))) * 31))
-		velocity[normalized_velocity] = 1.0
-		encoding[i] = np.concatenate((n_on, n_off, velocity, time_shift), axis=0)
+    # normalizing velocity values for a midi file and placing the concatenated one hot into the final array
+    for i, (n_on, n_off, velocity, time_shift) in enumerate(data):
+        normalized_velocity = int(np.floor(((velocity_lst[i] - min(velocity_lst)) / (max(velocity_lst) - min(velocity_lst))) * 31))
+        velocity[normalized_velocity] = 1.0
+        encoding[i] = np.concatenate((n_on, n_off, velocity, time_shift), axis=0)
 
-	return encoding
+    return encoding
 
 
 def get_raw_data(filenames):
