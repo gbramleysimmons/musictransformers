@@ -185,3 +185,4 @@ if __name__ == "__main__":
 
     elif func == 'generate':
         midi_to_encoding(in_path, out_path)
+

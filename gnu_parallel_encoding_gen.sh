@@ -19,3 +19,4 @@ cat $PBS_NODEFILE | uniq > /work/jfeins1/maestro/$HOST
 parallel --jobs $PBS_NUM_PPN --slf /work/jfeins1/maestro/$HOST --wd /work/jfeins1/maestro/ --joblog /work/jfeins1/maestro/$LOG --resume --colsep ' ' -a /work/jfeins1/maestro/$LST sh /work/jfeins1/maestro/python_wrapper_gen_encoding.sh {}
 
 rm /work/jfeins1/maestro/$HOST
+
