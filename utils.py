@@ -50,7 +50,7 @@ def encoding_to_midi(encoding, out_path, max_velocity=108):
         time_shift = one_hot_to_int(vector[288:413])
 
         # if time_shift value >= 125, we need to add the time value to the original msg and not create a new msg
-        if n_on == 0 and n_off == 0 and velocity == 0:
+        if n_on == 0 and n_off == 0 and velocity == 0 and len(data) != 0:
             data[-1]['time_shift'] += time_shift
         else:
             data.append({'n_on': n_on, 'n_off': n_off, 'velocity': velocity, 'time_shift': time_shift})
