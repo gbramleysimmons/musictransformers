@@ -108,8 +108,8 @@ class Multi_Headed(tf.keras.layers.Layer):
 
         else:
             # Split emb_sz into 'num_heads' groups, where the last head holds the elements that don't evenly divide
-            output_size = emb_sz // (num_heads - 1)
-            extra = emb_sz % (num_heads - 1)
+            output_size = int(emb_sz // num_heads)
+            extra = emb_sz - (output_size * num_heads)
             # create heads
             for i in range(num_heads):
                 # if we're at the last head...
@@ -117,7 +117,7 @@ class Multi_Headed(tf.keras.layers.Layer):
                     # and there is uneven division
                     if extra is not 0:
                         # create a head with the extra elements
-                        head = Atten_Head(emb_sz, extra, window_size, use_mask)
+                        head = Atten_Head(emb_sz, output_size + extra, window_size, use_mask)
                 # otherwise create a evenly divided head
                 else:
                     head = Atten_Head(emb_sz, output_size, window_size, use_mask)
