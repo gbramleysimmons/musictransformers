@@ -265,56 +265,79 @@ def generate_sequence(model, start_sequence, length):
     padded_sequence = np.asarray(pad_data(model.window_size.numpy(), model.padding_index.numpy(), [start_sequence]))[0]
     # print(padded_sequence.shape)
     final_sequence = start_sequence
+    result_vectors = [start_sequence]
     k = 30
     p = 0.80
-    count = 0
     seq_index = len(start_sequence)
+    
     # loop until sequence is of the given length
-    while len(final_sequence) < model.window_size.numpy() + length:
+    while len(result_vector) < length:
+
+        curr_event = []
+        
         # call model on the sequence to get the probability of the next 'word'
         model_input = np.asarray([padded_sequence])
         probs = model(model_input)[0][seq_index]
-        # Take the top K elements, and redistribute the probabilities among them (Top K sampling)
         index_array = probs.numpy()
-        if padded_sequence[seq_index - 1] == model.space_index.numpy():
-            index_array[model.space_index.numpy()] = 0
-        index_array = index_array.argsort()[-k:][::-1]
-        index_probs = tf.gather(probs, tf.constant(index_array))
-        index_probs = tf.nn.softmax(index_probs)
+        
+        note_on = index_array[:128]
+        note_off = index_array[128:256]
+        velocity = index_array[256:288]
+        time_step = index_array[288:413]
 
-        # Look at the first X words until their probabilites sum up to P (Top P "Nucleus" sampling)
-        prob_sum = 0
-        indices = []
-        i = 0
-        while prob_sum < p:
-            index = index_array[i]
+        if np.sum(note_on) > np.sum(note_off):
+            note_event = selection(k, p, note_on, 0)
+            vel = selection(32, p, velocity, 256)
+            
+            final_sequence.extend([note_event, vel])
+            curr_event.extend([note_event, vel])
 
-            prob = index_probs[i]
-            prob_sum += prob
-            indices.append(index)
-            i += 1
-        # choose an event randomly from those X words, weighted on their probability.
-        next_event = random.choices(indices, index_probs[:i], k=1)[0]
-        if next_event == model.space_index.numpy():
-            count = 0
-        else:
-            count += 1
+        else: 
+            note_event = selection(k, p, note_off, 128)
 
-        if count > model.max_phrase_length.numpy():
-            next_event = model.space_index.numpy()
-            count = np.random.choice(model.phrase_rand_amount.numpy())
-        final_sequence.append(next_event)
-        if seq_index < model.window_size.numpy() - 1:
+            final_sequence.append(note_event)
+            curr_event.append(note_event)
+
+        time = selection(k, p, time_step, 288)
+
+        final_sequence.append(time)
+        curr_event.append(time)
+        
+        result_vectors.append(curr_event)
+        size = len(curr_event)
+        
+        if seq_index < model.window_size.numpy() - size:
             padded_sequence[seq_index] = next_event
-            seq_index += 1
+            seq_index += size
         else:
             padded_sequence = np.asarray(final_sequence[-model.window_size.numpy():])
+            
+    return result_vectors
+    
 
+def selection(k, p, note_prob, shift):
+    
+    note_indeces = note_prob.argsort()[-k:][::-1] + shift
+    note_prob = tf.gather(tf.constant(note_prob), note_indeces - shift)
+    note_prob = tf.nn.softmax(note_prob)
 
+    prob_sum = 0
+    indices = []
+    i = 0
+    while prob_sum < p:
+        index = note_indeces[i]
+        prob = note_prob[i]
+        prob_sum += prob
+        indices.append(index)
+        i += 1
 
-    print("End of generate")
-    return final_sequence[model.window_size.numpy():]
+    next_event = random.choices(indices, note_prob[:i], k=1)[0]
+    return next_event
 
+def convert_to_vectors(sequence, vector_length=413):
+    return np.asarray(list(map(lambda x: tf.one_hot(x, vector_length))))
+
+'''
 def convert_to_vectors(sequence, space_index=412, vector_length=413):
     vectors = []
     vector_indices = []
@@ -341,6 +364,7 @@ def convert_to_vectors(sequence, space_index=412, vector_length=413):
 
 
     return np.asarray(vectors)
+'''
 
 def singleCall(model):
     masking_func = np.vectorize(lambda x: x != model.padding_index.numpy())
@@ -394,7 +418,7 @@ def main():
         sequence = np.asarray(generate_sequence(model, start_seq, 4000))
         vectors = convert_to_vectors(sequence)
         print("Encoding Midi")
-        midi = encoding_to_midi(vectors, "midi_out_{}.midi".format(i+1))
+        midi = encoding_to_midi(sequence, "midi_out_{}.midi".format(i+1))
 
 if __name__ == '__main__':
     main()
