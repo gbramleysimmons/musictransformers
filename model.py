@@ -7,6 +7,7 @@ import sys
 import random
 import os
 from utils import encoding_to_midi
+import matplotlib.pyplot as plt
 
 
 
@@ -17,7 +18,7 @@ class Transformer(tf.keras.Model):
 
 
         # Hyperparameters
-        self.batch_size = tf.Variable(40, trainable=False)
+        self.batch_size = tf.Variable(2, trainable=False)
         self.embedding_size = tf.Variable(50, trainable=False)
         self.hidden_layer_size = tf.Variable(50, trainable=False)
         # 0.01 performs better than 0.001, try 0.005
@@ -26,10 +27,10 @@ class Transformer(tf.keras.Model):
         # max window size for full data set
         
         # temp window size for subset of data
-        self.window_size = tf.Variable(6000, trainable=False)
+        self.window_size = tf.Variable(6999, trainable=False)
         self.space_index = tf.Variable(412, trainable=False)
         self.padding_index = tf.Variable(413, trainable=False)
-        self.num_heads = tf.Variable(1, trainable=False)
+        self.num_heads = tf.Variable(2, trainable=False)
         self.vocab_size = tf.Variable(414, trainable=False)
 
         # generation hyper params
@@ -134,12 +135,15 @@ def train(model):
     
     # Initializing masking function for later (may not be necessary)
     masking_func = np.vectorize(lambda x: x != model.padding_index.numpy())
-    length = len(os.listdir("data/train"))
+    length = len(os.listdir("dataset-v4/train"))
     global_max = 0
-
+    loss_array = np.asarray([])
+    steps = 0
     # Iterating over all inputs
     for i in range(0, length - model.batch_size.numpy(), model.batch_size.numpy()):
-        train_data, batch_max = process(model, i, "data/train")
+        steps += 1
+        print("Step: {}".format(steps))
+        train_data, batch_max = process(model, i, "dataset-v4/train")
         global_max = max(global_max, batch_max)
         
         inputs = train_data[:, :-1]
@@ -155,12 +159,18 @@ def train(model):
             with tf.GradientTape() as tape:
                 probabilities = model(inputs)
                 loss = model.loss_function(probabilities, labels, mask)
+                loss_array = np.append(loss_array, loss)
                 print("Training loss is {}".format(loss))
-
+                
             # Applying gradients
             gradients = tape.gradient(loss, model.trainable_variables)
             model.optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-    pass
+            model.save_weights("model_midtrain_weights_test", overwrite=True)
+            np.save("loss_array_test", loss_array)
+
+        if steps >= 2200:
+            break
+    return loss_array
 
 def process(model, j, folder):
     
@@ -169,13 +179,15 @@ def process(model, j, folder):
     data = format_data(data)
 
     maximum = np.max(list(map(lambda x: len(x), data)))
-    
-    data = pad_data(6000, model.padding_index.numpy(), data)
+    print(maximum)
+    data = pad_data(7000, model.padding_index.numpy(), data)
     data = np.asarray(data)
+    #data = data.reshape((-1, model.window_size.numpy() + 1))
+    #print(data.shape)
     # slicing data to run on local, using the entire dataset causes memory issues
-    data = data[:, :model.window_size.numpy()]
+    #data = data[:, :model.window_size.numpy()]
     
-    data = np.hstack((data, np.full((data.shape[0], 1), model.space_index.numpy())))
+   # data = np.hstack((data, np.full((data.shape[0], 1), model.space_index.numpy())))
     
     return data, maximum
 
@@ -199,10 +211,10 @@ def test(model):
     accuracy_sum = 0
     global_max = 0
 
-    length = len(os.listdir("data/test"))
+    length = len(os.listdir("dataset-v4/test"))
 
     for i in range(0, length - model.batch_size.numpy(), model.batch_size.numpy()):
-        test_data, batch_max = process(model, i, "data/test")
+        test_data, batch_max = process(model, i, "dataset-v4/test")
         global_max = max(global_max, batch_max)
         
         inputs = test_data[:, :-1]
@@ -332,7 +344,7 @@ def convert_to_vectors(sequence, space_index=412, vector_length=413):
 
 def singleCall(model):
     masking_func = np.vectorize(lambda x: x != model.padding_index.numpy())
-    train_data, batch_max = process(model, 0, "data/train")
+    train_data, batch_max = process(model, 0, "dataset-v4/train")
     inputs = train_data[:, :-1]
     labels = train_data[:, 1:]
     mask = masking_func(labels)
@@ -352,29 +364,40 @@ def main():
     model = Transformer()
     singleCall(model)
     
-    #model.load_weights("model_weights")
+    model.load_weights("/home/dante_rousseve/model_midtrain_weights_1")
     
     # Train and Test Model
     if False:
         for i in range(model.num_epochs.numpy()):
-            train(model)
-            plex, acc = test(model)
+            loss_array = train(model)
+            #plex, acc = test(model)
 
             # Printing resulatant perplexity and accuracy
-            print("Epoch:", i)
-            print("Perplexity", plex, "Accuracy", acc)
+            #print("Epoch:", i)
+            #print("Perplexity", plex, "Accuracy", acc)
 
-    model.save_weights("model_weights")
-    # Run model to create mididata
-    start_seq = [67, 270, 412]
-    # start_seq = [45, 277, 412]
-    sequence = np.asarray(generate_sequence(model, start_seq, 4000))
-    print(sequence)
-    print(sequence[0:300])
-    vectors = convert_to_vectors(sequence)
+            print("Saving Loss Graph")
+            plt.plot(loss_array)
+            plt.xlabel('Training Step')
+            plt.ylabel('Loss')
+            plt.savefig("Loss v. Training Step in Epoch {}.png".format(i))
 
-    midi = encoding_to_midi(vectors, "midi_out1.midi")
+    #model.save_weights("model_weights", overwrite=True)
+    #model.save("saved_model")
+    for i in range(15):
+        print("Generating midi #{}".format(i+1))
+        # Run model to create mididata
+        start_seqs = [[67, 270, 412], [45, 277, 412], [56, 270, 412], [75, 266, 412], [62, 272, 412]]
+    
+        start_seq = start_seqs[i % 5]
+
+        sequence = np.asarray(generate_sequence(model, start_seq, 4000))
+        vectors = convert_to_vectors(sequence)
+        print("Encoding Midi")
+        midi = encoding_to_midi(vectors, "midi_out_{}.midi".format(i+1))
 
 if __name__ == '__main__':
     main()
+
+
 
