@@ -83,8 +83,6 @@ class Transformer(tf.keras.Model):
         :param mask:  tensor that acts as a padding mask [batch_size x window_size]
         :return: scalar tensor of accuracy of the batch between 0 and 1
         """
-
-                # Masking may not be necessary
                 
         decoded_symbols = tf.argmax(input=prbs, axis=2)
         accuracy = tf.reduce_mean(tf.boolean_mask(tf.cast(tf.equal(decoded_symbols, labels), dtype=tf.float32),mask))
@@ -104,66 +102,7 @@ class Transformer(tf.keras.Model):
 
         return tf.reduce_sum(tf.boolean_mask(tf.keras.losses.sparse_categorical_crossentropy(labels, prbs, False), mask))
 
-def train(note_model, vel_model, time_model):
-    """
-    Runs through one epoch - all training examples.
 
-    :param model: the initialized model to use for forward and backward pass
-    :param train_data: (num_midis, window_size)
-    :return: None
-    """
-    
-    folder_list = os.listdir("dataset-v4/train")
-    random.shuffle(folder_list)
-    length = len(os.listdir("dataset-v4/train"))
-    
-    #loss_array = np.asarray([])
-    steps = 0
-    
-    for i in range(0, length - note_model.batch_size.numpy(), note_model.batch_size.numpy()):
-        steps += 1
-        print("Step: {}".format(steps))
-        note_data, vel_data, time_data = process(note_model, vel_model, time_model, i, "dataset-v4/train", folder_list)
-
-        train_loop(note_model, note_data)
-        train_loop(vel_model, vel_data)
-        train_loop(time_model, time_data)
-        
-        note_model.save_weights("note_weights", overwrite=True)
-        vel_model.save_weights("vel_weights", overwrite=True)
-        time_model.save_weights("time_weights", overwrite=True)
-        
-        if steps >= 2200:
-            break
-    #return loss_array
-    pass
-        
-
-def train_loop(model, train_data):
-    masking_func = np.vectorize(lambda x: x != model.padding_index.numpy())
-    inputs = train_data[:, :-1]
-    labels = train_data[:, 1:]
-    
-    # Ensuring full batch
-    if(len(inputs) == model.batch_size.numpy()):
-
-        # Creating mask
-        mask = masking_func(labels)
-
-            # Forward pass
-        with tf.GradientTape() as tape:
-            probabilities = model(inputs)
-            loss = model.loss_function(probabilities, labels, mask)
-            #loss_array = np.append(loss_array, loss)
-            print("Training loss is {}".format(loss))
-            
-        # Applying gradients
-        gradients = tape.gradient(loss, model.trainable_variables)
-        model.optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-        
-        #np.save("loss_array_test", loss_array)
-    pass
-        
 
 def process(note_model, vel_model, time_model, j, folder, folder_list):
     
@@ -219,16 +158,61 @@ def pad_data(window_size, padding_index, array):
             array[i] = midi
     return np.asarray(array)
 
-'''
-def test(model):
-    """
-    Runs through one epoch - all testing examples.
 
-    :param model: the initialized model to use for forward and backward pass
-    :param test_data:test data (all data for testing) of shape (num_midis, window_size)
-    :returns: a tuple containing at index 0 the perplexity of the test set and at index 1 the per symbol accuracy on test set,
-    e.g. (my_perplexity, my_accuracy)
-    """
+def train(note_model, vel_model, time_model):
+    
+    folder_list = os.listdir("dataset-v4/train")
+    random.shuffle(folder_list)
+    length = len(folder_list)
+    
+    #loss_array = np.asarray([])
+    steps = 0
+    
+    for i in range(0, length - note_model.batch_size.numpy(), note_model.batch_size.numpy()):
+        steps += 1
+        print("Step: {}".format(steps))
+        note_data, vel_data, time_data = process(note_model, vel_model, time_model, i, "dataset-v4/train", folder_list)
+
+        train_loop(note_model, note_data)
+        train_loop(vel_model, vel_data)
+        train_loop(time_model, time_data)
+        
+        note_model.save_weights("note_weights", overwrite=True)
+        vel_model.save_weights("vel_weights", overwrite=True)
+        time_model.save_weights("time_weights", overwrite=True)
+        
+        if steps >= 2200:
+            break
+    #return loss_array
+    pass
+        
+
+def train_loop(model, train_data):
+    masking_func = np.vectorize(lambda x: x != model.padding_index.numpy())
+    inputs = train_data[:, :-1]
+    labels = train_data[:, 1:]
+    
+    # Ensuring full batch
+    if(len(inputs) == model.batch_size.numpy()):
+
+        # Creating mask
+        mask = masking_func(labels)
+
+            # Forward pass
+        with tf.GradientTape() as tape:
+            probabilities = model(inputs)
+            loss = model.loss_function(probabilities, labels, mask)
+            #loss_array = np.append(loss_array, loss)
+            print("Training loss is {}".format(loss))
+            
+        # Applying gradients
+        gradients = tape.gradient(loss, model.trainable_variables)
+        model.optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+        
+        #np.save("loss_array_test", loss_array)
+    pass
+
+def test(note_model, vel_model, time_model):
 
     # Initializing masking function for later
     masking_func = np.vectorize(lambda x: x != model.padding_index.numpy())
@@ -237,47 +221,61 @@ def test(model):
     symbol_count = 0
     plex_sum = 0
     accuracy_sum = 0
-    global_max = 0
 
-    length = len(os.listdir("dataset-v4/test"))
+    folder_list = os.listdir("dataset-v4/train")
+    length = len(folder_list)
 
-    for i in range(0, length - model.batch_size.numpy(), model.batch_size.numpy()):
-        test_data, batch_max = process(model, i, "dataset-v4/test")
-        global_max = max(global_max, batch_max)
+    #for i in range(0, length - note_model.batch_size.numpy(), note_model.batch_size.numpy()):
+    for i in range(0, 300, note_model.batch_size.numpy()):
+        note_data, vel_data, time_data = process(note_model, vel_model, time_model, i, "dataset-v4/train", folder_list)
+
+        loss, acc, sym = test_loop(note_model, note_data)
+        plex_sum += loss
+        accuracy_sum += acc
+        symbol_count += sym
         
-        inputs = test_data[:, :-1]
-        labels = test_data[:, 1:]
-
-        # Ensuring full batch
-        if(len(labels) == model.batch_size.numpy()):
-
-            # Counting relevant metrics
-            mask = masking_func(labels)
-            for i in mask.flatten():
-                if i: symbol_count += 1
-
-
-            probabilities = model(inputs)
-            plex_sum += model.loss_function(probabilities, labels, mask)
-            accuracy_sum += model.accuracy_function(probabilities, labels, mask)
+        loss, acc, sym = test_loop(vel_model, vel_data)
+        plex_sum += loss
+        accuracy_sum += acc
+        symbol_count += sym
+        
+        loss, acc, sym = test_loop(time_model, time_data)
+        plex_sum += loss
+        accuracy_sum += acc
+        symbol_count += sym
 
     # Calculating per symbol accuracy
     perplexity = np.exp(plex_sum / symbol_count)
-    accuracy = accuracy_sum / int(len(test_data) / model.batch_size.numpy())
+    accuracy = accuracy_sum * note_model.batch_size.numpy() / length
+    accuracy = accuracy_sum * note_model.batch_size.numpy() / 300 / 3
 
     return (perplexity, accuracy)
-'''
 
-def intersect(carrier, modulator):
-    values = [val for val in carrier if val in modulator]
-    for i in range(len(values)):
-        values[i] -= min(modulator)
-    return values
+def test_loop(model, test_data):
+    masking_func = np.vectorize(lambda x: x != model.padding_index.numpy())
+    inputs = test_data[:, :-1]
+    labels = test_data[:, 1:]
+    symbol_count = 0
+    
+    # Ensuring full batch
+    if(len(inputs) == model.batch_size.numpy()):
+    
+        # Creating mask
+        mask = masking_func(labels)
+        for i in mask.flatten():
+            if i: symbol_count += 1
 
-def model_run(model, seq, i):
-    model_input = np.asarray([seq])
-    probs = model(model_input)[0][i]
-    return probs.numpy()
+        # Forward pass
+        probabilities = model(inputs)
+        loss = model.loss_function(probabilities, labels, mask)
+        accuracy = model.accuracy_function(probabilities, labels, mask).numpy()
+
+    return loss, accuracy, symbol_count
+
+
+
+
+
 
 def generate_sequence(note_model, vel_model, time_model, start_sequence, length):
     window_size = note_model.window_size.numpy()
@@ -296,10 +294,10 @@ def generate_sequence(note_model, vel_model, time_model, start_sequence, length)
     time_seq = list(pad_data(window_size, time_model.padding_index.numpy(), [time_seq])[0])
     
     result_vectors = [start_sequence]
-    k = 10
+    k = 20
     p = 0.92
-    pause_prob = 0.8
-    on_prob = 0.4
+    pause_prob = 0.6
+    on_prob = 0.8
     
     # loop until sequence is of the given length
     while len(result_vectors) < length:
@@ -316,7 +314,7 @@ def generate_sequence(note_model, vel_model, time_model, start_sequence, length)
         if np.random.choice([0, 1], p=[pause_prob, 1 - pause_prob]):
             if np.random.choice([1,0], p=[on_prob, 1 - on_prob]):
                 note_event = selection(k, p, note_on, 0)
-                vel_event = selection(k, p, vel_probs, 256)
+                vel_event = selection(min(k, 32), p, vel_probs, 256)
                 curr_event.extend([note_event, vel_event])
             else:
                 note_event = selection(k, p, note_off, 128)
@@ -350,11 +348,21 @@ def generate_sequence(note_model, vel_model, time_model, start_sequence, length)
             time_seq.append(time_event - 288)
             time_seq = time_seq[-window_size:]
         
-        #if note_i >= window_size - 1: result_vectors.append(curr_event)
-        result_vectors.append(curr_event)
+        if note_i >= window_size - 1: result_vectors.append(curr_event)
+        #result_vectors.append(curr_event)
         
     return result_vectors
     
+def intersect(carrier, modulator):
+    values = [val for val in carrier if val in modulator]
+    for i in range(len(values)):
+        values[i] -= min(modulator)
+    return values
+
+def model_run(model, seq, i):
+    model_input = np.asarray([seq])
+    probs = model(model_input)[0][i]
+    return probs.numpy()
 
 def selection(k, p, note_prob, shift):
     
@@ -400,6 +408,10 @@ def singleCall(note_model, vel_model, time_model):
     
 
 def main():
+    train_model = False
+    test_model = False
+    generate = True
+    
     note_model = Transformer(256)
     vel_model = Transformer(32)
     time_model = Transformer(125)
@@ -410,16 +422,10 @@ def main():
     vel_model.load_weights("vel_weights")
     time_model.load_weights("time_weights")
     
-    # Train and Test Model
-    if False:
+    # Train model
+    if train_model:
         for i in range(note_model.num_epochs.numpy()):
             loss_array = train(note_model, vel_model, time_model)
-            #plex, acc = test(model)
-
-            # Printing resulatant perplexity and accuracy
-            #print("Epoch:", i)
-            #print("Perplexity", plex, "Accuracy", acc)
-
             '''
             print("Saving Loss Graph")
             plt.plot(loss_array)
@@ -427,20 +433,22 @@ def main():
             plt.ylabel('Loss')
             plt.savefig("Loss v. Training Step in Epoch {}.png".format(i))
             '''
+    if test_model:
+        plex, acc = test(note_model, vel_model, time_model)
+        print("Perplexity", plex, "Accuracy", acc)
+        
+    if generate:    
+        for i in range(5): # specify desired number of files
+            print("Generating midi #{}".format(i+1))
+            # Run model to create mididata
+            start_seq = [50, 53, 57, 62, 65, 69, 74, 69, 65, 62, 57, 53, 50,53, 57, 62, 65, 69, 74, 69, 65, 62, 57, 53, 50, 53, 57, 62, 65, 69, 74, 69, 65, 62, 57, 53, 50, 280, 400, 401, 402, 403, 404]
+        
+            #start_seq = start_seqs[i % 5]
 
-    #model.save_weights("model_weights", overwrite=True)
-    #model.save("saved_model")
-    for i in range(1):
-        print("Generating midi #{}".format(i+1))
-        # Run model to create mididata
-        start_seq = [50, 53, 57, 62, 60, 58, 60, 62, 50, 62, 280, 400, 401, 402, 403, 404]
-    
-        #start_seq = start_seqs[i % 5]
-
-        sequence = np.asarray(generate_sequence(note_model, vel_model, time_model, start_seq, 1000))
-        vectors = convert_to_vectors(sequence)
-        print("Encoding Midi")
-        midi = encoding_to_midi(vectors, "midi_out_{}.midi".format(i+1))
+            sequence = np.asarray(generate_sequence(note_model, vel_model, time_model, start_seq, 1000))
+            vectors = convert_to_vectors(sequence)
+            print("Encoding Midi")
+            midi = encoding_to_midi(vectors, "midi_out_{}.midi".format(i+1))
 
 if __name__ == '__main__':
     main()

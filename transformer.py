@@ -60,7 +60,6 @@ class Atten_Head(tf.keras.layers.Layer):
         K = tf.matmul(inputs_for_keys, self.K)
         V = tf.matmul(inputs_for_values, self.V)
         Q = tf.matmul(inputs_for_queries, self.Q)
-        print("Q shape is {}, E shape is {}".format(Q.shape, self.E.shape))
         rel_emb = tf.matmul(Q, tf.transpose(self.E, perm=[1,0]))
         S_rel = skew(rel_emb)
 
