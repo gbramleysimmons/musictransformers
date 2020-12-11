@@ -151,18 +151,6 @@ def get_data(train_file="data/train", val_file="data/val",test_file="data/test",
 
 	return train, val, test
 
-'''
-def get_data_split(train_folder="data/train", val_folder="data/val", test_folder="data/test"):
-	
-	Retrieves data from .npy files separated by array
-	:return: train data, val data, test data
-	
-	#print("Max length: {}".format(get_max_length(train_folder, val_folder, test_folder)))
-	train = dir_to_files(train_folder)
-	val = dir_to_files(val_folder)
-	test = dir_to_files(test_folder)
-	return train, val, test
-'''
 
 def get_data_split(folder, folder_list, j, batch_size):
 	'''
@@ -180,7 +168,8 @@ def get_data_split(folder, folder_list, j, batch_size):
 			break
 		i += 1
 	return arr
-	
+
+
 def get_max_length(train, val, test):
 	maximum = 0
 	for file in os.listdir(train):
@@ -188,7 +177,6 @@ def get_max_length(train, val, test):
 			mididat = np.load(os.path.join(train, file))
 			maxmium = max(maximum, np.shape(mididat)[0])
 
-			
 	for file in os.listdir(val):
 		if file.endswith(".npy"):
 			mididat = np.load(os.path.join(val, file))

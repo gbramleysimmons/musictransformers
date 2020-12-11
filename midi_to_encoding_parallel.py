@@ -4,6 +4,12 @@ import os
 import csv
 import argparse
 
+"""
+
+script to create midi encodings in parallel
+
+"""
+
 
 def getArgs():
     parser = argparse.ArgumentParser('python')
@@ -100,6 +106,12 @@ def create_encoding(mid):
 
 
 def split_array(array, max_len=2000):
+    """
+    splits an array into n arrays of len max_len
+    :param array:
+    :param max_len:
+    :return:
+    """
     new_array_lst = []
     for x in range(0, len(array), max_len):
         split = array[x: x + max_len]
@@ -110,6 +122,12 @@ def split_array(array, max_len=2000):
 
 
 def midi_to_encoding(in_path, out_path):
+    """
+    converts a midi to an encoding, splits the encoding, and saves it
+    :param in_path: path to midi
+    :param out_path: path to save
+    :return:
+    """
     midi_file = mido.MidiFile(in_path, clip=True)
     encoding = create_encoding(midi_file)
     array_lst = split_array(encoding)
@@ -142,8 +160,13 @@ def files_from_csv(csv_filename):
 
 
 def task_lst_gen(dirr, csv_path):
+    """
+    creates a task list for use with GNU-parallel
+    :param dirr:
+    :param csv_path:
+    :return:
+    """
     train_file_lst, val_file_lst, test_file_lst = files_from_csv(csv_path)
-    print(train_file_lst)
 
     task_dict = {}
     out_prefix = '/work/jfeins1/maestro/dataset-v3/'
