@@ -173,8 +173,9 @@ def train(model):
     return loss_array
 
 def process(model, j, folder):
-    
-    data = get_data_split(folder, j, model.batch_size.numpy())
+    folder_list = os.listdir(folder)
+    folder_list = random.shuffle(folder_list)
+    data = get_data_split(folder, folder_list, j, model.batch_size.numpy())
     # turn the midi files into one-dimensional vectors, with space tokens in between each timestep
     data = format_data(data)
 
@@ -271,7 +272,7 @@ def generate_sequence(model, start_sequence, length):
     seq_index = len(start_sequence)
     
     # loop until sequence is of the given length
-    while len(result_vector) < length:
+    while len(result_vectors) < length:
 
         curr_event = []
         
@@ -284,7 +285,9 @@ def generate_sequence(model, start_sequence, length):
         note_off = index_array[128:256]
         velocity = index_array[256:288]
         time_step = index_array[288:413]
-
+        
+        #print(np.sum(note_on), np.sum(note_off), np.sum(velocity), np.sum(time_step))
+        #print(probs)
         if np.sum(note_on) > np.sum(note_off):
             note_event = selection(k, p, note_on, 0)
             vel = selection(32, p, velocity, 256)
@@ -303,11 +306,14 @@ def generate_sequence(model, start_sequence, length):
         final_sequence.append(time)
         curr_event.append(time)
         
-        result_vectors.append(curr_event)
+        print(curr_event)
+        if seq_index >= model.window_size.numpy() - 5:
+            result_vectors.append(curr_event)
+
         size = len(curr_event)
         
         if seq_index < model.window_size.numpy() - size:
-            padded_sequence[seq_index] = next_event
+            padded_sequence[seq_index:seq_index + size] = curr_event
             seq_index += size
         else:
             padded_sequence = np.asarray(final_sequence[-model.window_size.numpy():])
@@ -317,7 +323,10 @@ def generate_sequence(model, start_sequence, length):
 
 def selection(k, p, note_prob, shift):
     
-    note_indeces = note_prob.argsort()[-k:][::-1] + shift
+    note_argsort = note_prob.argsort()[::-1]
+    if not shift:
+        print(note_argsort)
+    note_indeces = note_argsort[:k] + shift
     note_prob = tf.gather(tf.constant(note_prob), note_indeces - shift)
     note_prob = tf.nn.softmax(note_prob)
 
@@ -331,40 +340,21 @@ def selection(k, p, note_prob, shift):
         indices.append(index)
         i += 1
 
+
     next_event = random.choices(indices, note_prob[:i], k=1)[0]
     return next_event
 
 def convert_to_vectors(sequence, vector_length=413):
-    return np.asarray(list(map(lambda x: tf.one_hot(x, vector_length))))
-
-'''
-def convert_to_vectors(sequence, space_index=412, vector_length=413):
+    #return np.asarray(list(map(lambda x: tf.one_hot(x, vector_length), sequence)))
     vectors = []
-    vector_indices = []
-    # go through each event in the sequence
     for i in range(len(sequence)):
-        # append the event to vector_indices
-        event = sequence[i]
-        vector_indices.append(event)
-        # if the event is a space...
-        if event == space_index:
-            # create a vector for this timestep, filling in all the indices we have so far
-            vector = np.zeros(vector_length)
-            vector[vector_indices] = 1
-            # reset vector_indices
-            vector_indices = []
-            # append the vector to our vector list
-            vectors.append(vector)
-
-    if vector_indices:
         vector = np.zeros(vector_length)
-        vector_indices.append(space_index)
-        vector[vector_indices] = 1
+        vector[sequence[i]] = 1
+    
+        print(vector)
         vectors.append(vector)
 
-
     return np.asarray(vectors)
-'''
 
 def singleCall(model):
     masking_func = np.vectorize(lambda x: x != model.padding_index.numpy())
@@ -411,14 +401,15 @@ def main():
     for i in range(15):
         print("Generating midi #{}".format(i+1))
         # Run model to create mididata
-        start_seqs = [[67, 270, 412], [45, 277, 412], [56, 270, 412], [75, 266, 412], [62, 272, 412]]
+        start_seq = [70, 280, 346]
     
-        start_seq = start_seqs[i % 5]
+        #start_seq = start_seqs[i % 5]
 
-        sequence = np.asarray(generate_sequence(model, start_seq, 4000))
+        sequence = np.asarray(generate_sequence(model, start_seq, 1500))
         vectors = convert_to_vectors(sequence)
+        print(vectors.shape)
         print("Encoding Midi")
-        midi = encoding_to_midi(sequence, "midi_out_{}.midi".format(i+1))
+        midi = encoding_to_midi(vectors, "midi_out_{}.midi".format(i+1))
 
 if __name__ == '__main__':
     main()

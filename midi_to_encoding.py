@@ -164,14 +164,14 @@ def get_data_split(train_folder="data/train", val_folder="data/val", test_folder
 	return train, val, test
 '''
 
-def get_data_split(folder, j, batch_size):
+def get_data_split(folder, folder_list, j, batch_size):
 	'''
 	Retrieves data from .npy files separated by array
 	:return: train data, val data, test data
 	'''
 	arr = []
 	i = 0
-	for file in os.listdir(folder):
+	for file in folder_list:
 		if(i > j):
 			if file.endswith(".npy"):
 				arr.append(np.load(os.path.join(folder, file)))
